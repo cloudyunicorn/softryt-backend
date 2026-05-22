@@ -1,0 +1,28 @@
+[project]
+name = "softryt-backend"
+version = "0.1.0"
+description = "FastAPI automation engine for SoftRYT programmatic SEO platform"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    # Web framework
+    "fastapi[standard]>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    # Database
+    "supabase>=2.13.0",
+    # AI & Orchestration
+    "langchain-core>=0.3.0",
+    "langchain-openai>=0.3.0",
+    "langgraph>=0.4.0",
+    # Web scraping
+    "playwright>=1.49.0",
+    "html2text>=2024.2.26",
+    # Config & utilities
+    "pydantic-settings>=2.7.0",
+    "python-dotenv>=1.0.0",
+    "httpx>=0.28.0",
+    "langchain-community>=0.4.1",
+    "duckduckgo-search>=8.1.1",
+    "ddgs>=9.14.2",
+    "beautifulsoup4>=4.14.3",
+]
