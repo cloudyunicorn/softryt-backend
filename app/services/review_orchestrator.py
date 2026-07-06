@@ -66,6 +66,7 @@ async def review_writer_node(state: ReviewOrchestratorState) -> ReviewOrchestrat
         "model": model_name,
         "temperature": 0.7,
         "max_tokens": 8000,
+        "timeout": 300,
     }
 
     # Route to NVIDIA NIM if model name contains a slash (e.g. "openai/gpt-oss-120b")
@@ -76,6 +77,7 @@ async def review_writer_node(state: ReviewOrchestratorState) -> ReviewOrchestrat
     else:
         llm_kwargs["api_key"] = settings.openai_api_key
 
+    print(f"🤖 [MODEL USAGE] Invoking Review Writer LLM: {model_name}", flush=True)
     logger.info(f"Using writer model: '{model_name}' for single-tool review generation")
     llm = ChatOpenAI(**llm_kwargs)
 
@@ -88,8 +90,8 @@ async def review_writer_node(state: ReviewOrchestratorState) -> ReviewOrchestrat
         tool_description=tool.get("description", ""),
         tool_pricing=json.dumps(tool.get("pricing_tiers", []), indent=2),
         tool_features=json.dumps(tool.get("key_features", []), indent=2),
-        tool_comprehensive=json.dumps(tool.get("comprehensive_data", {}), indent=2)[:5000],
-        tool_raw_content=(tool.get("raw_content", "") or "")[:5000],
+        tool_comprehensive=json.dumps(tool.get("comprehensive_data", {}), indent=2)[:100000],
+        tool_raw_content=(tool.get("raw_content", "") or "")[:50000],
         tool_slug=tool.get("slug", ""),
     )
 
@@ -133,6 +135,7 @@ async def review_fact_checker_node(state: ReviewOrchestratorState) -> ReviewOrch
         "model": settings.fact_checker_model,
         "temperature": 0.1,
         "max_tokens": 4000,
+        "timeout": 300,
     }
 
     if settings.nvidia_api_key and "/" in settings.fact_checker_model:
@@ -141,13 +144,14 @@ async def review_fact_checker_node(state: ReviewOrchestratorState) -> ReviewOrch
     else:
         llm_kwargs["api_key"] = settings.openai_api_key
 
+    print(f"🤖 [MODEL USAGE] Invoking Review Fact-Checker LLM: {settings.fact_checker_model}", flush=True)
     logger.info(f"Using fact-checker model: '{settings.fact_checker_model}' for single-tool review validation")
     llm = ChatOpenAI(**llm_kwargs)
 
     tool = state["tool"]
 
     user_prompt = REVIEW_FACT_CHECKER_USER_PROMPT_TEMPLATE.format(
-        generated_content=state["generated_content"][:10000],
+        generated_content=state["generated_content"][:40000],
         tool_name=tool["name"],
         tool_pricing=json.dumps(tool.get("pricing_tiers", []), indent=2),
         tool_features=json.dumps(tool.get("key_features", []), indent=2),

@@ -338,11 +338,11 @@ def synthesize_deep_data(markdown_payload: str, tool_name: str) -> Comprehensive
     """
     settings = get_settings()
 
-    # Build the ChatOpenAI client — route to NVIDIA NIM if model has a slash
     llm_kwargs = {
         "model": settings.deep_scrape_model,
         "temperature": 0.1,
         "max_tokens": 8000,
+        "timeout": 300,
     }
 
     if settings.nvidia_api_key and "/" in settings.deep_scrape_model:
@@ -351,14 +351,15 @@ def synthesize_deep_data(markdown_payload: str, tool_name: str) -> Comprehensive
     else:
         llm_kwargs["api_key"] = settings.openai_api_key
 
+    print(f"🤖 [MODEL USAGE] Invoking Deep Scraper synthesis LLM: {settings.deep_scrape_model}", flush=True)
     logger.info(f"Using deep scraper model: '{settings.deep_scrape_model}' for technical evaluation synthesis")
     llm = ChatOpenAI(**llm_kwargs)
 
     # Bind to our structured output schema
     structured_llm = llm.with_structured_output(ComprehensiveToolData)
 
-    # Truncate to fit context window (~100K chars for safety with 128K token model)
-    truncated = markdown_payload[:100000]
+    # Truncate to fit context window (~300K chars for safety with Kimi K2.6)
+    truncated = markdown_payload[:300000]
 
     user_message = f"""Tool under evaluation: {tool_name}
 
@@ -494,7 +495,7 @@ def _sync_run_pipeline(tool_id_str: str, base_url: str) -> dict:
     upsert_data = {
         "tool_id": tool_id_str,
         "comprehensive_data": comprehensive_data.model_dump(),
-        "raw_content": markdown_payload[:50000],  # Keep first 50K for reference
+        "raw_content": markdown_payload[:150000],  # Keep first 150K for reference
         "content_hash": content_hash,
         "last_scraped_at": "now()",
     }

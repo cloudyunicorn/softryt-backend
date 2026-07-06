@@ -138,9 +138,9 @@ def _ai_extract_pricing(raw_text: str, tool_name: str) -> tuple[list[dict], list
 
     client = OpenAI(**client_kwargs)
     
-    # Truncate raw text to fit in context window (keep first 15K chars which 
-    # typically contains all pricing info on the page)
-    truncated_text = raw_text[:15000]
+    # Truncate raw text to fit in context window (keep first 80K chars to 
+    # extract pricing and deep SaaS features)
+    truncated_text = raw_text[:80000]
     
     user_message = f"""Tool name: {tool_name}
 
@@ -277,7 +277,7 @@ def _sync_scrape_tool(tool_id_str: str) -> dict:
                 "tool_id": tool_id_str,
                 "pricing_tiers": pricing_tiers,
                 "key_features": key_features,
-                "raw_content": raw_text[:50000],
+                "raw_content": raw_text[:150000],
                 "content_hash": content_hash,
                 "last_scraped_at": "now()",
             }
@@ -294,7 +294,7 @@ def _sync_scrape_tool(tool_id_str: str) -> dict:
                 "tool_name": tool["name"],
                 "pricing_tiers": pricing_tiers,
                 "key_features": key_features,
-                "raw_content": raw_text[:50000],
+                "raw_content": raw_text[:150000],
                 "content_hash": content_hash,
             }
 

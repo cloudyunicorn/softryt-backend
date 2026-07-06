@@ -57,6 +57,38 @@ VIEWPORTS = [
 ]
 
 
+def extract_json_from_text(text: str) -> dict:
+    """
+    Extracts a JSON object from text, even if wrapped in markdown code fences,
+    or prefixed/suffixed with conversational text.
+    """
+    text = text.strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    # Try searching for a JSON object structure { ... }
+    match = re.search(r"(\{[\s\S]*\})", text)
+    if match:
+        json_str = match.group(1).strip()
+        # Clean up any potential markdown fences inside the captured group if they exist
+        if json_str.startswith("```json"):
+            json_str = json_str[7:].strip()
+        if json_str.endswith("```"):
+            json_str = json_str[:-3].strip()
+        try:
+            return json.loads(json_str)
+        except json.JSONDecodeError:
+            # Try removing trailing commas, which are a common LLM mistake
+            try:
+                cleaned = re.sub(r",\s*([\]}])", r"\1", json_str)
+                return json.loads(cleaned)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Failed to decode JSON: {e}")
+    raise ValueError("No JSON block found in text")
+
+
 # ──────────────────────────────────────────────────────────────
 # STATE DEFINITION
 # ──────────────────────────────────────────────────────────────
@@ -217,7 +249,7 @@ def _scrape_research_urls(urls: list[str]) -> tuple[str, int]:
                 if content_html:
                     md = converter.handle(content_html)
                     if len(md.strip()) > 200:
-                        truncated_md = md.strip()[:8000]
+                        truncated_md = md.strip()[:40000]
                         markdown_parts.append(
                             f"\n\n### SOURCE: {url} ###\n\n{truncated_md}"
                         )
@@ -286,6 +318,7 @@ def _get_kimi_llm(temperature: float = 0.7, max_tokens: int = 8000) -> ChatOpenA
         "model": model_name,
         "temperature": temperature,
         "max_tokens": max_tokens,
+        "timeout": 300,  # 5 minutes timeout to prevent premature ReadTimeout on large generations
     }
 
     # Route to NVIDIA NIM (model has a slash → NVIDIA, not OpenAI)
@@ -295,6 +328,7 @@ def _get_kimi_llm(temperature: float = 0.7, max_tokens: int = 8000) -> ChatOpenA
     else:
         llm_kwargs["api_key"] = settings.openai_api_key
 
+    print(f"🤖 [MODEL USAGE] Invoking Kimi LLM: {model_name} (temp={temperature}, max_tokens={max_tokens})", flush=True)
     logger.info(f"Using blog writer model: '{model_name}' for blog post generation")
     return ChatOpenAI(**llm_kwargs)
 
@@ -311,6 +345,7 @@ async def blog_researcher_node(state: BlogOrchestratorState) -> BlogOrchestrator
     2. Playwright deep-scrapes discovered URLs for full article content
     """
     logger.info(f"📚 Blog Researcher starting for: {state['topic']}")
+    print(f"\n📚 [1/3] Researching topic: '{state['topic']}' via DuckDuckGo & Playwright deep-scraping...", flush=True)
 
     loop = asyncio.get_running_loop()
 
@@ -361,6 +396,7 @@ async def blog_writer_node(state: BlogOrchestratorState) -> BlogOrchestratorStat
     2. Full blog content generation (higher-temp creative writing)
     """
     logger.info(f"✍️  Blog Writer starting for: {state['topic']}")
+    print(f"\n✍️ [2/3] Generating blog metadata (Title, Slug, Tags) for: {state['topic']}...", flush=True)
 
     try:
         # ── Step 1: Generate title, slug, meta description, tags ──────
@@ -377,14 +413,7 @@ async def blog_writer_node(state: BlogOrchestratorState) -> BlogOrchestratorStat
         ])
 
         title_text = title_response.content.strip()
-        # Handle potential markdown code fences
-        if title_text.startswith("```"):
-            title_text = title_text.split("```")[1]
-            if title_text.startswith("json"):
-                title_text = title_text[4:]
-            title_text = title_text.strip()
-
-        title_data = json.loads(title_text)
+        title_data = extract_json_from_text(title_text)
 
         title = title_data.get("title", state["topic"])
         slug = title_data.get("slug", re.sub(r"[^a-z0-9]+", "-", state["topic"].lower()).strip("-"))
@@ -395,6 +424,17 @@ async def blog_writer_node(state: BlogOrchestratorState) -> BlogOrchestratorStat
         all_tags = list(set(state.get("tags", []) + ai_tags))
 
         logger.info(f"✍️  Generated metadata: title='{title}', slug='{slug}'")
+        print(f"✍️ [3/3] Generating full blog post MDX content (~2000 words)...", flush=True)
+
+        # Fetch registered tools from Supabase to dynamically guide LLM between toolSlug and href
+        db = get_supabase_client()
+        try:
+            tools_resp = db.table("tools").select("slug").eq("is_active", True).execute()
+            registered_slugs = [t["slug"] for t in tools_resp.data] if tools_resp.data else []
+        except Exception as e:
+            logger.warning(f"Failed to fetch active tools for prompt context: {e}")
+            registered_slugs = []
+        registered_tools_str = ", ".join(registered_slugs) if registered_slugs else "None"
 
         # ── Step 2: Generate full blog content ──────────────────────
         content_llm = _get_kimi_llm(temperature=0.7, max_tokens=8000)
@@ -402,7 +442,8 @@ async def blog_writer_node(state: BlogOrchestratorState) -> BlogOrchestratorStat
         user_prompt = BLOG_WRITER_USER_PROMPT_TEMPLATE.format(
             topic=state["topic"],
             slug=slug,
-            research_data=state["research_data"][:60000],  # Cap research context
+            registered_tools=registered_tools_str,
+            research_data=state["research_data"][:240000],  # Cap research context at 240k chars
         )
 
         content_response = await content_llm.ainvoke([
@@ -456,6 +497,7 @@ async def blog_save_node(state: BlogOrchestratorState) -> BlogOrchestratorState:
     Completely separate from the generated_pages table used for SaaS content.
     """
     db = get_supabase_client()
+    print(f"💾 [💾] Upserting generated blog post '{state['title']}' (slug: {state['slug']}) to Supabase...", flush=True)
 
     schema_markup = {
         "@context": "https://schema.org",
@@ -484,7 +526,7 @@ async def blog_save_node(state: BlogOrchestratorState) -> BlogOrchestratorState:
         "meta_description": state["meta_description"],
         "markdown_content": state["generated_content"],
         "topic": state["topic"],
-        "research_data": state.get("research_data", "")[:50000],
+        "research_data": state.get("research_data", "")[:150000],
         "cover_image_url": state.get("cover_image_url"),
         "schema_markup": schema_markup,
         "tags": state.get("tags", []),

@@ -74,6 +74,7 @@ async def writer_node(state: OrchestratorState) -> OrchestratorState:
         "model": settings.writer_model,
         "temperature": 0.7,
         "max_tokens": 8000,
+        "timeout": 300,
     }
     
     # Route to NVIDIA NIM if model name contains a slash (e.g. "meta/llama-3.3", "openai/gpt-oss-120b")
@@ -84,6 +85,7 @@ async def writer_node(state: OrchestratorState) -> OrchestratorState:
     else:
         llm_kwargs["api_key"] = settings.openai_api_key
 
+    print(f"🤖 [MODEL USAGE] Invoking Comparison Writer LLM: {settings.writer_model}", flush=True)
     logger.info(f"Using comparison writer model: '{settings.writer_model}' for tool comparison generation")
     llm = ChatOpenAI(**llm_kwargs)
 
@@ -98,14 +100,14 @@ async def writer_node(state: OrchestratorState) -> OrchestratorState:
         tool_a_description=tool_a.get("description", ""),
         tool_a_pricing=json.dumps(tool_a.get("pricing_tiers", []), indent=2),
         tool_a_features=json.dumps(tool_a.get("key_features", []), indent=2),
-        tool_a_raw_content=(tool_a.get("raw_content", "") or "")[:5000],
+        tool_a_raw_content=(tool_a.get("raw_content", "") or "")[:50000],
         tool_b_name=tool_b["name"],
         tool_b_url=tool_b.get("website_url", ""),
         tool_b_category=tool_b.get("category", ""),
         tool_b_description=tool_b.get("description", ""),
         tool_b_pricing=json.dumps(tool_b.get("pricing_tiers", []), indent=2),
         tool_b_features=json.dumps(tool_b.get("key_features", []), indent=2),
-        tool_b_raw_content=(tool_b.get("raw_content", "") or "")[:5000],
+        tool_b_raw_content=(tool_b.get("raw_content", "") or "")[:50000],
         slug=state["slug"],
         tool_a_slug=tool_a.get("slug", ""),
         tool_b_slug=tool_b.get("slug", ""),
@@ -162,6 +164,7 @@ async def fact_checker_node(state: OrchestratorState) -> OrchestratorState:
         "model": settings.fact_checker_model,
         "temperature": 0.1,  # Low temperature for precise fact-checking
         "max_tokens": 4000,
+        "timeout": 300,
     }
 
     # Route to NVIDIA NIM if model name contains a slash
@@ -171,6 +174,7 @@ async def fact_checker_node(state: OrchestratorState) -> OrchestratorState:
     else:
         llm_kwargs["api_key"] = settings.openai_api_key
 
+    print(f"🤖 [MODEL USAGE] Invoking Comparison Fact-Checker LLM: {settings.fact_checker_model}", flush=True)
     logger.info(f"Using comparison fact-checker model: '{settings.fact_checker_model}' for tool comparison validation")
     llm = ChatOpenAI(**llm_kwargs)
 
@@ -178,7 +182,7 @@ async def fact_checker_node(state: OrchestratorState) -> OrchestratorState:
     tool_b = state["tool_b"]
 
     user_prompt = FACT_CHECKER_USER_PROMPT_TEMPLATE.format(
-        generated_content=state["generated_content"][:10000],
+        generated_content=state["generated_content"][:40000],
         tool_a_name=tool_a["name"],
         tool_a_pricing=json.dumps(tool_a.get("pricing_tiers", []), indent=2),
         tool_a_features=json.dumps(tool_a.get("key_features", []), indent=2),
