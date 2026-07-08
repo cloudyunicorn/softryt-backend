@@ -1,4 +1,4 @@
-# SoftRYT Backend — Programmatic SEO & Affiliate Automation Engine
+# Cloudy Unicorn Backend — Programmatic SEO & Affiliate Automation Engine
 
 SoftRYT Backend is the core automation and orchestration engine for the SoftRYT programmatic SEO affiliate platform. Powered by FastAPI, it automates the pipeline of scraping SaaS tool data (pricing tiers, features, integrations) and generating high-ranking, fact-checked comparison pages, reviews, and blog posts in MDX format.
 
